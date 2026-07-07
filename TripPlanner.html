@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>מסלול הטיול שלי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ===================== DESIGN TOKENS ===================== */
+  :root{
+    --bg:#f6f1e4;
+    --surface:#fffdf8;
+    --surface-2:#eee6d2;
+    --text:#1b2a2f;
+    --muted:#746b5a;
+    --brass:#b8863b;
+    --brass-soft:#e8d3ab;
+    --stamp:#a63d2f;
+    --route:#2f5b6e;
+    --line: rgba(27,42,47,0.16);
+    --shadow: 0 2px 10px rgba(27,42,47,0.08), 0 1px 2px rgba(27,42,47,0.06);
+    --radius: 10px;
+  }
+  html[data-theme="dark"]{
+    --bg:#101a1c;
+    --surface:#172124;
+    --surface-2:#1e2b2e;
+    --text:#efe7d6;
+    --muted:#9aa39f;
+    --brass:#d9ab5f;
+    --brass-soft:#3a3020;
+    --stamp:#e3705f;
+    --route:#79c1d6;
+    --line: rgba(239,231,214,0.14);
+    --shadow: 0 2px 14px rgba(0,0,0,0.45);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at top left, rgba(184,134,59,0.08), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Heebo',sans-serif;
+    transition:background .25s ease, color .25s ease;
+    min-height:100vh;
+  }
+  .mono{font-family:'Space Mono',monospace;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 80px;}
+
+  /* ===================== HEADER / BOARDING PASS ===================== */
+  .pass{
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    display:grid;
+    grid-template-columns: 1fr auto;
+    align-items:center;
+    padding:20px 22px;
+    gap:12px;
+    overflow:hidden;
+  }
+  .pass::after{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(0deg, transparent 0 10px, var(--line) 10px 11px);
+    -webkit-mask-image: linear-gradient(to left, black, transparent 40%);
+    mask-image: linear-gradient(to left, black, transparent 40%);
+    opacity:.5;
+    pointer-events:none;
+  }
+  .pass-title{
+    font-size:12px;
+    letter-spacing:.14em;
+    color:var(--muted);
+    text-transform:uppercase;
+    margin:0 0 6px;
+  }
+  .pass-route{
+    display:flex; align-items:center; gap:10px;
+    font-weight:900; font-size:clamp(22px,4vw,32px);
+  }
+  .pass-route .plane{color:var(--brass); font-size:.7em;}
+  select#tripSelect{
+    appearance:none;
+    background:transparent;
+    border:none;
+    font:inherit;
+    font-weight:900;
+    font-size:clamp(22px,4vw,32px);
+    color:var(--text);
+    cursor:pointer;
+    max-width:60vw;
+  }
+  .pass-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; z-index:1;}
+
+  .btn{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:9px 14px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:var(--surface-2);
+    color:var(--text);
+    cursor:pointer;
+    font-size:14px;
+    font-weight:500;
+    transition:transform .12s ease, background .15s ease;
+    white-space:nowrap;
+  }
+  .btn:hover{transform:translateY(-1px); background:var(--brass-soft);}
+  .btn:active{transform:translateY(0);}
+  .btn.primary{background:var(--route); color:#fff; border-color:transparent;}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .btn.ghost{background:transparent;}
+  .btn.icon{padding:9px 11px;}
+
+  /* ===================== TOOLBAR ===================== */
+  .toolbar{
+    display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+    margin:16px 0;
+  }
+  .search{
+    flex:1; min-width:180px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:10px 16px;
+    color:var(--text);
+    font:inherit; font-size:14px;
+  }
+  .search::placeholder{color:var(--muted);}
+  .chip{
+    padding:7px 13px; border-radius:999px; border:1px solid var(--line);
+    background:var(--surface); color:var(--muted); font-size:13px; cursor:pointer;
+    user-select:none;
+  }
+  .chip.active{background:var(--route); color:#fff; border-color:transparent;}
+  .toggle{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer;}
+
+  /* ===================== DAY TABS (ticket stubs) ===================== */
+  .daytabs{
+    display:flex; gap:10px; overflow-x:auto; padding:6px 4px 14px;
+    scrollbar-width:thin;
+  }
+  .daytab{
+    position:relative;
+    flex:0 0 auto;
+    padding:10px 18px;
+    background:var(--surface);
+    border:1px dashed var(--line);
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:700;
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .daytab::before, .daytab::after{
+    content:"";
+    position:absolute; bottom:-6px;
+    width:12px; height:12px; border-radius:50%;
+    background:var(--bg);
+    border:1px dashed var(--line);
+  }
+  .daytab::before{right:-6px;}
+  .daytab::after{left:-6px;}
+  .daytab.active{
+    background:var(--route); color:#fff; border-color:var(--route);
+  }
+  .daytab .count{
+    font-family:'Space Mono',monospace; font-size:11px; opacity:.8; margin-inline-start:6px;
+  }
+
+  /* ===================== BOARD ===================== */
+  .board{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap:16px;
+  }
+  .column{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:12px;
+    min-height:120px;
+    box-shadow:var(--shadow);
+  }
+  .column-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:2px 4px 10px; border-bottom:1px dashed var(--line); margin-bottom:10px;
+  }
+  .column-head h3{margin:0; font-size:15px;}
+  .column-head span{font-size:12px; color:var(--muted); font-family:'Space Mono',monospace;}
+  .column.dragover{outline:2px dashed var(--brass); outline-offset:-4px;}
+
+  /* ===================== CARD (postcard / luggage tag) ===================== */
+  .card{
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 12px 10px;
+    margin-bottom:10px;
+    cursor:grab;
+    transition:box-shadow .15s ease, opacity .15s ease;
+  }
+  .card:hover{box-shadow:var(--shadow);}
+  .card.dragging{opacity:.4;}
+  .card.visited{background:var(--surface-2);}
+  .card-top{display:flex; justify-content:space-between; gap:8px;}
+  .card-name{font-weight:700; font-size:15px; margin:0 0 4px;}
+  .card-cat{font-size:12px; color:var(--muted);}
+  .card-desc{font-size:13px; color:var(--muted); margin:6px 0 10px; line-height:1.5;}
+  .card-row{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
+  .card-controls{display:flex; gap:6px; align-items:center;}
+  .mini{
+    border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+    border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer;
+  }
+  .mini:hover{background:var(--brass-soft);}
+  select.daypick{
+    border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+    border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit;
+  }
+
+  .stamp-btn{
+    width:44px; height:44px; border-radius:50%;
+    border:2px dashed var(--stamp);
+    background:transparent;
+    color:var(--stamp);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:18px;
+    transform:rotate(-8deg);
+    transition:transform .2s ease, background .2s ease;
+    flex:0 0 auto;
+  }
+  .stamp-btn.on{
+    background:var(--stamp); color:var(--surface); border-style:solid;
+    transform:rotate(-8deg) scale(1.05);
+  }
+  .card.visited .card-name{text-decoration:line-through; text-decoration-color:var(--stamp);}
+
+  .empty-col{color:var(--muted); font-size:13px; text-align:center; padding:20px 6px;}
+
+  /* ===================== MISC ===================== */
+  .footer-note{
+    text-align:center; color:var(--muted); font-size:12px; margin-top:30px;
+    font-family:'Space Mono',monospace;
+  }
+  .state-box{
+    text-align:center; padding:60px 20px; color:var(--muted);
+  }
+  .state-box h2{color:var(--text); margin-bottom:8px;}
+  code{
+    background:var(--surface-2); padding:2px 6px; border-radius:4px; font-family:'Space Mono',monospace;
+  }
+  ::-webkit-scrollbar{height:8px; width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:99px;}
+
+  @media (max-width:640px){
+    .pass{grid-template-columns:1fr; text-align:center;}
+    .pass-actions{justify-content:center;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HEADER ===================== -->
+  <div class="pass">
+    <div>
+      <p class="pass-title">כרטיס עלייה למסלול · Boarding Pass</p>
+      <div class="pass-route">
+        <span class="plane">✈</span>
+        <select id="tripSelect"><option>טוען טיולים…</option></select>
+      </div>
+    </div>
+    <div class="pass-actions">
+      <button class="btn icon" id="themeBtn" title="החלף מצב תצוגה">🌓</button>
+      <button class="btn" id="refreshBtn">↻ רענון</button>
+      <a class="btn primary" id="addBtn" target="_blank" rel="noopener">+ הוספת אטרקציה</a>
+    </div>
+  </div>
+
+  <!-- ===================== TOOLBAR ===================== -->
+  <div class="toolbar">
+    <input class="search" id="searchInput" type="text" placeholder="חיפוש אטרקציה…">
+    <div id="catChips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+    <label class="toggle"><input type="checkbox" id="hideVisited"> הסתר מבוקרים</label>
+  </div>
+
+  <!-- ===================== DAY TABS ===================== -->
+  <div class="daytabs" id="dayTabs"></div>
+
+  <!-- ===================== BOARD ===================== -->
+  <div id="board" class="board"></div>
+
+  <p class="footer-note">מופעל ע"י Google Sheets + Apps Script · נבנה עבורך ✈</p>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIG — fill these in after you deploy the Apps Script Web App and
+   create the Google Form (see SETUP.md that came with this file).
+   ========================================================================= */
+const CONFIG = {
+  WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbye4G1ebvtFfBU4SSCT7FgUSSlmep8OoIG8Ul8fg5IDi8dUd0kmaWNSpySSInv79kwc/exec',
+  TOKEN: 'kfj29XQ84mLp',
+  FORM_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSehOrgZNRogKMpR4oXxJXjy7TbIE9fsnGZBcg5ucQo78MGocg/viewform?usp=dialog',
+  FORM_TRIP_ENTRY_ID: '' // optional: e.g. 'entry.123456789' to prefill the trip name in the form
+};
+
+const CATEGORY_EMOJI = {
+  'אטרקציה':'🎯','מסעדה':'🍽️','טבע':'🌿','תרבות':'🏛️','קניות':'🛍️','לינה':'🛏️','אחר':'📌'
+};
+
+/* ===================== STATE ===================== */
+let trips = [];
+let attractions = [];
+let currentTrip = localStorage.getItem('tp_lastTrip') || '';
+let activeDay = 'all';
+let activeCategory = 'all';
+let searchTerm = '';
+let hideVisited = false;
+
+/* ===================== INIT ===================== */
+document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  bindStaticEvents();
+  if (!isConfigured()) {
+    renderNotConfigured();
+    return;
+  }
+  loadTrips();
+});
+
+function isConfigured(){
+  return CONFIG.WEB_APP_URL && !CONFIG.WEB_APP_URL.startsWith('PASTE_');
+}
+
+function renderNotConfigured(){
+  document.getElementById('board').innerHTML = `
+    <div class="state-box" style="grid-column:1/-1">
+      <h2>עוד לא מחובר לגיליון שלך</h2>
+      <p>פתח/י את קובץ ה-HTML ומלא/י בתחילתו את <code>CONFIG.WEB_APP_URL</code>, <code>CONFIG.TOKEN</code> ו-<code>CONFIG.FORM_URL</code>.<br>
+      ההוראות המלאות נמצאות בקובץ SETUP.md שקיבלת יחד עם האתר.</p>
+    </div>`;
+  document.getElementById('tripSelect').innerHTML = '<option>לא מחובר</option>';
+}
+
+/* ===================== THEME ===================== */
+function initTheme(){
+  const saved = localStorage.getItem('tp_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+}
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('tp_theme', next);
+}
+
+/* ===================== STATIC EVENTS ===================== */
+function bindStaticEvents(){
+  document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+  document.getElementById('refreshBtn').addEventListener('click', () => loadAttractions(currentTrip));
+  document.getElementById('tripSelect').addEventListener('change', e => {
+    currentTrip = e.target.value;
+    localStorage.setItem('tp_lastTrip', currentTrip);
+    activeDay = 'all';
+    updateAddLink();
+    loadAttractions(currentTrip);
+  });
+  document.getElementById('searchInput').addEventListener('input', e => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    render();
+  });
+  document.getElementById('hideVisited').addEventListener('change', e => {
+    hideVisited = e.target.checked;
+    render();
+  });
+}
+
+function updateAddLink(){
+  const a = document.getElementById('addBtn');
+  let url = CONFIG.FORM_URL || '#';
+  if (CONFIG.FORM_TRIP_ENTRY_ID && currentTrip && url !== '#') {
+    const sep = url.includes('?') ? '&' : '?';
+    url += `${sep}${CONFIG.FORM_TRIP_ENTRY_ID}=${encodeURIComponent(currentTrip)}`;
+  }
+  a.href = url;
+}
+
+/* ===================== API ===================== */
+async function apiGet(action, params={}){
+  const url = new URL(CONFIG.WEB_APP_URL);
+  url.searchParams.set('action', action);
+  url.searchParams.set('token', CONFIG.TOKEN);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url.toString());
+  return res.json();
+}
+async function apiPost(body){
+  const res = await fetch(CONFIG.WEB_APP_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'}, // avoids CORS preflight on Apps Script
+    body: JSON.stringify({...body, token: CONFIG.TOKEN})
+  });
+  return res.json();
+}
+
+/* ===================== LOAD DATA ===================== */
+async function loadTrips(){
+  const select = document.getElementById('tripSelect');
+  select.innerHTML = '<option>טוען…</option>';
+  try{
+    const data = await apiGet('trips');
+    trips = data.trips || [];
+    if (!trips.length){
+      select.innerHTML = '<option value="">אין עדיין טיולים — הוסיפו אטרקציה ראשונה</option>';
+      document.getElementById('board').innerHTML = `<div class="state-box" style="grid-column:1/-1"><h2>בואו נתחיל 🧳</h2><p>לחצו על "הוספת אטרקציה" כדי ליצור את הטיול הראשון שלכם.</p></div>`;
+      updateAddLink();
+      return;
+    }
+    if (!currentTrip || !trips.includes(currentTrip)) currentTrip = trips[0];
+    select.innerHTML = trips.map(t => `<option value="${escapeHtml(t)}" ${t===currentTrip?'selected':''}>${escapeHtml(t)}</option>`).join('');
+    updateAddLink();
+    loadAttractions(currentTrip);
+  }catch(err){
+    select.innerHTML = '<option>שגיאת חיבור</option>';
+    document.getElementById('board').innerHTML = `<div class="state-box" style="grid-column:1/-1"><h2>שגיאת חיבור לגיליון</h2><p>בדקו שכתובת ה-Web App וה-Token נכונים.</p></div>`;
+  }
+}
+
+async function loadAttractions(trip){
+  if (!trip) return;
+  document.getElementById('board').innerHTML = `<div class="state-box" style="grid-column:1/-1">טוען אטרקציות…</div>`;
+  try{
+    const data = await apiGet('list', {trip});
+    attractions = (data.attractions || []).map(normalizeRow);
+    renderCategoryChips();
+    render();
+  }catch(err){
+    document.getElementById('board').innerHTML = `<div class="state-box" style="grid-column:1/-1"><h2>שגיאה בטעינת האטרקציות</h2></div>`;
+  }
+}
+
+function normalizeRow(r){
+  return {
+    id: r.ID,
+    trip: r.Trip,
+    name: r.Name,
+    desc: r.Description,
+    mapLink: r.MapLink,
+    category: r.Category || 'אחר',
+    day: (r.Day === '' || r.Day === null || r.Day === undefined) ? 0 : Number(r.Day),
+    order: Number(r.OrderIndex) || 0,
+    visited: r.Visited === true || r.Visited === 'TRUE' || r.Visited === 'true'
+  };
+}
+
+/* ===================== CATEGORY CHIPS ===================== */
+function renderCategoryChips(){
+  const cats = ['all', ...new Set(attractions.map(a => a.category))];
+  const box = document.getElementById('catChips');
+  box.innerHTML = cats.map(c => {
+    const label = c === 'all' ? 'הכל' : `${CATEGORY_EMOJI[c]||'📌'} ${c}`;
+    return `<span class="chip ${activeCategory===c?'active':''}" data-cat="${escapeHtml(c)}">${label}</span>`;
+  }).join('');
+  box.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      activeCategory = chip.dataset.cat;
+      renderCategoryChips();
+      render();
+    });
+  });
+}
+
+/* ===================== DAY TABS ===================== */
+function renderDayTabs(){
+  const maxDay = Math.max(0, ...attractions.map(a => a.day));
+  const days = ['all', 0];
+  for (let d=1; d<=maxDay+1; d++) days.push(d);
+  const tabs = document.getElementById('dayTabs');
+  tabs.innerHTML = days.map(d => {
+    let label, count;
+    if (d === 'all'){ label = 'כל הימים'; count = attractions.length; }
+    else if (d === 0){ label = 'לא משויך'; count = attractions.filter(a=>a.day===0).length; }
+    else { label = `יום ${d}`; count = attractions.filter(a=>a.day===d).length; }
+    return `<div class="daytab ${activeDay===d?'active':''}" data-day="${d}">${label}<span class="count mono">${count}</span></div>`;
+  }).join('');
+  tabs.querySelectorAll('.daytab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const v = tab.dataset.day;
+      activeDay = v === 'all' ? 'all' : Number(v);
+      renderDayTabs();
+      render();
+    });
+  });
+}
+
+/* ===================== FILTERING ===================== */
+function filteredList(){
+  return attractions.filter(a => {
+    if (activeCategory !== 'all' && a.category !== activeCategory) return false;
+    if (hideVisited && a.visited) return false;
+    if (searchTerm){
+      const hay = (a.name+' '+a.desc).toLowerCase();
+      if (!hay.includes(searchTerm)) return false;
+    }
+    return true;
+  });
+}
+
+/* ===================== RENDER BOARD ===================== */
+function render(){
+  renderDayTabs();
+  const list = filteredList();
+  const board = document.getElementById('board');
+  const maxDay = Math.max(0, ...attractions.map(a => a.day));
+
+  let daysToShow;
+  if (activeDay === 'all'){
+    daysToShow = [0];
+    for (let d=1; d<=maxDay+1; d++) daysToShow.push(d);
+  } else {
+    daysToShow = [activeDay];
+  }
+
+  board.innerHTML = daysToShow.map(d => {
+    const items = list.filter(a => a.day === d).sort((a,b)=>a.order-b.order);
+    const title = d===0 ? 'לא משויך' : `יום ${d}`;
+    return `
+      <div class="column" data-day="${d}">
+        <div class="column-head"><h3>${title}</h3><span>${items.length} עצירות</span></div>
+        <div class="dropzone" data-day="${d}">
+          ${items.map(cardHtml).join('') || '<div class="empty-col">גררו לכאן אטרקציה, או שאין עדיין</div>'}
+        </div>
+      </div>`;
+  }).join('');
+
+  bindCardEvents(maxDay);
+  bindDragEvents();
+}
+
+function cardHtml(a){
+  const emoji = CATEGORY_EMOJI[a.category] || '📌';
+  return `
+    <div class="card ${a.visited?'visited':''}" draggable="true" data-id="${a.id}">
+      <div class="card-top">
+        <div>
+          <p class="card-name">${escapeHtml(a.name)}</p>
+          <span class="card-cat">${emoji} ${escapeHtml(a.category)}</span>
+        </div>
+        <button class="stamp-btn ${a.visited?'on':''}" data-action="toggle" title="סמן כביקרתי">✓</button>
+      </div>
+      ${a.desc ? `<p class="card-desc">${escapeHtml(a.desc)}</p>` : ''}
+      <div class="card-row">
+        <div class="card-controls">
+          ${a.mapLink ? `<a class="mini" href="${escapeAttr(a.mapLink)}" target="_blank" rel="noopener">📍 מפה</a>` : ''}
+          <button class="mini" data-action="up">⬆</button>
+          <button class="mini" data-action="down">⬇</button>
+        </div>
+        <select class="daypick" data-action="day"></select>
+      </div>
+    </div>`;
+}
+
+function bindCardEvents(maxDay){
+  document.querySelectorAll('.daypick').forEach(sel => {
+    const card = sel.closest('.card');
+    const id = card.dataset.id;
+    const item = attractions.find(a => a.id === id);
+    const opts = ['<option value="0">לא משויך</option>'];
+    for (let d=1; d<=maxDay+1; d++) opts.push(`<option value="${d}">יום ${d}</option>`);
+    sel.innerHTML = opts.join('');
+    sel.value = item.day;
+    sel.addEventListener('change', () => moveCard(id, Number(sel.value)));
+  });
+
+  document.querySelectorAll('.card [data-action="toggle"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.closest('.card').dataset.id;
+      toggleVisited(id);
+    });
+  });
+  document.querySelectorAll('.card [data-action="up"]').forEach(btn => {
+    btn.addEventListener('click', () => reorderWithinDay(btn.closest('.card').dataset.id, -1));
+  });
+  document.querySelectorAll('.card [data-action="down"]').forEach(btn => {
+    btn.addEventListener('click', () => reorderWithinDay(btn.closest('.card').dataset.id, 1));
+  });
+}
+
+/* ===================== DRAG & DROP ===================== */
+function bindDragEvents(){
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      card.classList.add('dragging');
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+  });
+  document.querySelectorAll('.dropzone').forEach(zone => {
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      zone.closest('.column').classList.add('dragover');
+    });
+    zone.addEventListener('dragleave', () => zone.closest('.column').classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.closest('.column').classList.remove('dragover');
+      const id = e.dataTransfer.getData('text/plain');
+      const day = Number(zone.dataset.day);
+      moveCard(id, day);
+    });
+  });
+}
+
+/* ===================== ACTIONS (optimistic + sync) ===================== */
+function moveCard(id, day){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  item.day = day;
+  const siblings = attractions.filter(a => a.day === day && a.id !== id);
+  item.order = siblings.length ? Math.max(...siblings.map(s=>s.order)) + 1 : 0;
+  render();
+  apiPost({action:'updateDay', id, day, order: item.order});
+}
+
+function reorderWithinDay(id, dir){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  const siblings = attractions.filter(a => a.day === item.day).sort((a,b)=>a.order-b.order);
+  const idx = siblings.findIndex(s => s.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const other = siblings[swapIdx];
+  const tmp = item.order; item.order = other.order; other.order = tmp;
+  render();
+  apiPost({action:'reorder', items:[{id:item.id, day:item.day, order:item.order}, {id:other.id, day:other.day, order:other.order}]});
+}
+
+function toggleVisited(id){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  item.visited = !item.visited;
+  render();
+  apiPost({action:'toggleVisited', id, visited:item.visited});
+}
+
+/* ===================== UTIL ===================== */
+function escapeHtml(str){
+  return (str||'').toString().replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+function escapeAttr(str){ return escapeHtml(str); }
+</script>
+</body>
+</html>
