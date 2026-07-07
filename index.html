@@ -303,6 +303,7 @@
     </div>
     <div class="pass-actions">
       <button class="btn icon" id="themeBtn" title="החלף מצב תצוגה">🌓</button>
+      <button class="btn icon" id="deleteTripBtn" title="מחיקת הטיול הנוכחי">🗑</button>
       <button class="btn" id="refreshBtn">↻ רענון</button>
       <a class="btn primary" id="addBtn" target="_blank" rel="noopener">+ הוספת אטרקציה</a>
     </div>
@@ -390,6 +391,7 @@ function toggleTheme(){
 /* ===================== STATIC EVENTS ===================== */
 function bindStaticEvents(){
   document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+  document.getElementById('deleteTripBtn').addEventListener('click', deleteTrip);
   document.getElementById('refreshBtn').addEventListener('click', () => loadAttractions(currentTrip));
   document.getElementById('tripSelect').addEventListener('change', e => {
     currentTrip = e.target.value;
@@ -418,7 +420,16 @@ function updateAddLink(){
   a.href = url;
 }
 
-/* ===================== API ===================== */
+async function deleteTrip(){
+  if (!currentTrip){ alert('אין טיול נבחר.'); return; }
+  const typed = prompt(`פעולה זו תמחק לצמיתות את כל האטרקציות של "${currentTrip}".\nהקלידו את שם הטיול בדיוק כדי לאשר:`);
+  if (typed === null) return; // cancelled
+  if (typed !== currentTrip){ alert('השם לא תואם — המחיקה בוטלה.'); return; }
+  await apiCall('deleteTrip', {trip: currentTrip});
+  localStorage.removeItem('tp_lastTrip');
+  currentTrip = '';
+  loadTrips();
+}
 // Every call — reads and writes alike — goes through GET. Apps Script web
 // apps frequently answer with a redirect, and fetch() silently retries that
 // redirect as a GET, stripping any POST body along the way. Using GET
@@ -613,6 +624,7 @@ function cardHtml(a, columnDay, maxDay){
           ${a.mapLink ? `<a class="mini" href="${escapeAttr(a.mapLink)}" target="_blank" rel="noopener">📍 מפה</a>` : ''}
           <button class="mini" data-action="up">⬆</button>
           <button class="mini" data-action="down">⬇</button>
+          <button class="mini" data-action="delete" title="מחיקת האטרקציה">🗑</button>
         </div>
         <div class="daypick-wrap">
           <button class="mini" data-action="openpanel">+ ימים</button>
@@ -633,6 +645,7 @@ function bindCardEvents(){
     card.querySelector('[data-action="toggle"]').addEventListener('click', () => toggleVisited(id));
     card.querySelector('[data-action="up"]').addEventListener('click', () => reorderWithinDay(id, -1, columnDay));
     card.querySelector('[data-action="down"]').addEventListener('click', () => reorderWithinDay(id, 1, columnDay));
+    card.querySelector('[data-action="delete"]').addEventListener('click', () => deleteAttraction(id));
 
     card.querySelectorAll('[data-action="removeday"]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -755,6 +768,15 @@ function reorderWithinDay(id, dir, day){
   const tmp = item.order; item.order = other.order; other.order = tmp;
   render();
   apiCall('reorder', {items: JSON.stringify([{id:item.id, day:item.days.join(','), order:item.order}, {id:other.id, day:other.days.join(','), order:other.order}])});
+}
+
+function deleteAttraction(id){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  if (!confirm(`למחוק את "${item.name}"? לא ניתן לשחזר את הפעולה.`)) return;
+  attractions = attractions.filter(a => a.id !== id);
+  render();
+  apiCall('delete', {id});
 }
 
 function toggleVisited(id){
