@@ -223,10 +223,31 @@
     border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer;
   }
   .mini:hover{background:var(--brass-soft);}
-  select.daypick{
-    border:1px solid var(--line); background:var(--surface-2); color:var(--text);
-    border-radius:6px; padding:5px 8px; font-size:12px; font-family:inherit;
+  .day-badges{display:flex; gap:5px; flex-wrap:wrap; align-items:center;}
+  .day-badge{
+    display:inline-flex; align-items:center; gap:4px;
+    background:var(--route); color:#fff; border-radius:999px;
+    padding:3px 4px 3px 9px; font-size:11px; font-family:'Space Mono',monospace;
   }
+  .day-badge.unassigned{background:var(--surface-2); color:var(--muted);}
+  .day-badge button{
+    background:rgba(255,255,255,0.25); border:none; color:inherit; border-radius:50%;
+    width:16px; height:16px; font-size:10px; cursor:pointer; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .day-badge.unassigned button{background:rgba(0,0,0,0.08);}
+  .daypick-wrap{position:relative;}
+  .daypick-panel{
+    position:absolute; z-index:20; bottom:calc(100% + 6px); left:0;
+    background:var(--surface); border:1px solid var(--line); border-radius:8px;
+    box-shadow:var(--shadow); padding:8px; min-width:130px;
+    display:none; flex-direction:column; gap:4px;
+  }
+  .daypick-panel.open{display:flex;}
+  .daypick-panel label{
+    display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; padding:3px 4px; border-radius:5px;
+  }
+  .daypick-panel label:hover{background:var(--surface-2);}
 
   .stamp-btn{
     width:44px; height:44px; border-radius:50%;
@@ -327,6 +348,7 @@ let activeDay = 'all';
 let activeCategory = 'all';
 let searchTerm = '';
 let hideVisited = false;
+let openPanelId = null; // keeps the "+ ימים" popover open across quick checkbox toggles
 
 /* ===================== INIT ===================== */
 document.addEventListener('DOMContentLoaded', () => {
@@ -397,20 +419,19 @@ function updateAddLink(){
 }
 
 /* ===================== API ===================== */
-async function apiGet(action, params={}){
+// Every call — reads and writes alike — goes through GET. Apps Script web
+// apps frequently answer with a redirect, and fetch() silently retries that
+// redirect as a GET, stripping any POST body along the way. Using GET
+// everywhere (with parameters in the URL) sidesteps that entirely.
+async function apiCall(action, params={}){
   const url = new URL(CONFIG.WEB_APP_URL);
   url.searchParams.set('action', action);
   url.searchParams.set('token', CONFIG.TOKEN);
-  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
-  const res = await fetch(url.toString());
-  return res.json();
-}
-async function apiPost(body){
-  const res = await fetch(CONFIG.WEB_APP_URL, {
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'}, // avoids CORS preflight on Apps Script
-    body: JSON.stringify({...body, token: CONFIG.TOKEN})
+  url.searchParams.set('_ts', Date.now()); // cache-buster, so writes are never served a stale cached response
+  Object.entries(params).forEach(([k,v]) => {
+    url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : v);
   });
+  const res = await fetch(url.toString(), { cache:'no-store' });
   return res.json();
 }
 
@@ -419,7 +440,7 @@ async function loadTrips(){
   const select = document.getElementById('tripSelect');
   select.innerHTML = '<option>טוען…</option>';
   try{
-    const data = await apiGet('trips');
+    const data = await apiCall('trips');
     trips = data.trips || [];
     if (!trips.length){
       select.innerHTML = '<option value="">אין עדיין טיולים — הוסיפו אטרקציה ראשונה</option>';
@@ -441,7 +462,7 @@ async function loadAttractions(trip){
   if (!trip) return;
   document.getElementById('board').innerHTML = `<div class="state-box" style="grid-column:1/-1">טוען אטרקציות…</div>`;
   try{
-    const data = await apiGet('list', {trip});
+    const data = await apiCall('list', {trip});
     attractions = (data.attractions || []).map(normalizeRow);
     renderCategoryChips();
     render();
@@ -451,6 +472,9 @@ async function loadAttractions(trip){
 }
 
 function normalizeRow(r){
+  const days = (r.Day === '' || r.Day === null || r.Day === undefined)
+    ? []
+    : [...new Set(r.Day.toString().split(',').map(s => parseInt(s.trim(),10)).filter(n => !isNaN(n) && n > 0))].sort((a,b)=>a-b);
   return {
     id: r.ID,
     trip: r.Trip,
@@ -458,7 +482,7 @@ function normalizeRow(r){
     desc: r.Description,
     mapLink: r.MapLink,
     category: r.Category || 'אחר',
-    day: (r.Day === '' || r.Day === null || r.Day === undefined) ? 0 : Number(r.Day),
+    days,
     order: Number(r.OrderIndex) || 0,
     visited: r.Visited === true || r.Visited === 'TRUE' || r.Visited === 'true'
   };
@@ -482,16 +506,25 @@ function renderCategoryChips(){
 }
 
 /* ===================== DAY TABS ===================== */
+function maxDayOf(list){
+  return Math.max(0, ...list.flatMap(a => a.days));
+}
+
 function renderDayTabs(){
-  const maxDay = Math.max(0, ...attractions.map(a => a.day));
-  const days = ['all', 0];
+  const maxDay = maxDayOf(attractions);
+  const unassignedCount = attractions.filter(a=>a.days.length===0).length;
+  const days = ['all'];
+  if (unassignedCount > 0) days.push(0);
   for (let d=1; d<=maxDay+1; d++) days.push(d);
+
+  if (activeDay === 0 && unassignedCount === 0) activeDay = 'all';
+
   const tabs = document.getElementById('dayTabs');
   tabs.innerHTML = days.map(d => {
     let label, count;
     if (d === 'all'){ label = 'כל הימים'; count = attractions.length; }
-    else if (d === 0){ label = 'לא משויך'; count = attractions.filter(a=>a.day===0).length; }
-    else { label = `יום ${d}`; count = attractions.filter(a=>a.day===d).length; }
+    else if (d === 0){ label = 'לא משויך'; count = unassignedCount; }
+    else { label = `יום ${d}`; count = attractions.filter(a=>a.days.includes(d)).length; }
     return `<div class="daytab ${activeDay===d?'active':''}" data-day="${d}">${label}<span class="count mono">${count}</span></div>`;
   }).join('');
   tabs.querySelectorAll('.daytab').forEach(tab => {
@@ -522,36 +555,50 @@ function render(){
   renderDayTabs();
   const list = filteredList();
   const board = document.getElementById('board');
-  const maxDay = Math.max(0, ...attractions.map(a => a.day));
+  const maxDay = maxDayOf(attractions);
 
   let daysToShow;
   if (activeDay === 'all'){
-    daysToShow = [0];
+    daysToShow = [];
+    if (attractions.some(a => a.days.length===0)) daysToShow.push(0);
     for (let d=1; d<=maxDay+1; d++) daysToShow.push(d);
   } else {
     daysToShow = [activeDay];
   }
 
   board.innerHTML = daysToShow.map(d => {
-    const items = list.filter(a => a.day === d).sort((a,b)=>a.order-b.order);
+    const items = list
+      .filter(a => d===0 ? a.days.length===0 : a.days.includes(d))
+      .sort((a,b)=>a.order-b.order);
     const title = d===0 ? 'לא משויך' : `יום ${d}`;
     return `
       <div class="column" data-day="${d}">
         <div class="column-head"><h3>${title}</h3><span>${items.length} עצירות</span></div>
         <div class="dropzone" data-day="${d}">
-          ${items.map(cardHtml).join('') || '<div class="empty-col">גררו לכאן אטרקציה, או שאין עדיין</div>'}
+          ${items.map(a => cardHtml(a, d, maxDay)).join('') || '<div class="empty-col">גררו לכאן אטרקציה, או שאין עדיין</div>'}
         </div>
       </div>`;
   }).join('');
 
-  bindCardEvents(maxDay);
+  bindCardEvents();
   bindDragEvents();
 }
 
-function cardHtml(a){
+function dayBadgesHtml(a){
+  if (!a.days.length){
+    return `<span class="day-badge unassigned">לא משויך</span>`;
+  }
+  return a.days.map(d => `
+    <span class="day-badge">יום ${d}<button data-action="removeday" data-day="${d}" title="הסר מהיום הזה">✕</button></span>
+  `).join('');
+}
+
+function cardHtml(a, columnDay, maxDay){
   const emoji = CATEGORY_EMOJI[a.category] || '📌';
+  const dayOptions = [];
+  for (let d=1; d<=maxDay+1; d++) dayOptions.push(d);
   return `
-    <div class="card ${a.visited?'visited':''}" draggable="true" data-id="${a.id}">
+    <div class="card ${a.visited?'visited':''}" draggable="true" data-id="${a.id}" data-source-day="${columnDay}">
       <div class="card-top">
         <div>
           <p class="card-name">${escapeHtml(a.name)}</p>
@@ -560,41 +607,67 @@ function cardHtml(a){
         <button class="stamp-btn ${a.visited?'on':''}" data-action="toggle" title="סמן כביקרתי">✓</button>
       </div>
       ${a.desc ? `<p class="card-desc">${escapeHtml(a.desc)}</p>` : ''}
-      <div class="card-row">
+      <div class="day-badges">${dayBadgesHtml(a)}</div>
+      <div class="card-row" style="margin-top:8px;">
         <div class="card-controls">
           ${a.mapLink ? `<a class="mini" href="${escapeAttr(a.mapLink)}" target="_blank" rel="noopener">📍 מפה</a>` : ''}
           <button class="mini" data-action="up">⬆</button>
           <button class="mini" data-action="down">⬇</button>
         </div>
-        <select class="daypick" data-action="day"></select>
+        <div class="daypick-wrap">
+          <button class="mini" data-action="openpanel">+ ימים</button>
+          <div class="daypick-panel">
+            <label><input type="checkbox" data-day="0" ${a.days.length===0?'checked':''}> לא משויך</label>
+            ${dayOptions.map(d => `<label><input type="checkbox" data-day="${d}" ${a.days.includes(d)?'checked':''}> יום ${d}</label>`).join('')}
+          </div>
+        </div>
       </div>
     </div>`;
 }
 
-function bindCardEvents(maxDay){
-  document.querySelectorAll('.daypick').forEach(sel => {
-    const card = sel.closest('.card');
+function bindCardEvents(){
+  document.querySelectorAll('.card').forEach(card => {
     const id = card.dataset.id;
-    const item = attractions.find(a => a.id === id);
-    const opts = ['<option value="0">לא משויך</option>'];
-    for (let d=1; d<=maxDay+1; d++) opts.push(`<option value="${d}">יום ${d}</option>`);
-    sel.innerHTML = opts.join('');
-    sel.value = item.day;
-    sel.addEventListener('change', () => moveCard(id, Number(sel.value)));
-  });
+    const columnDay = Number(card.dataset.sourceDay);
 
-  document.querySelectorAll('.card [data-action="toggle"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.closest('.card').dataset.id;
-      toggleVisited(id);
+    card.querySelector('[data-action="toggle"]').addEventListener('click', () => toggleVisited(id));
+    card.querySelector('[data-action="up"]').addEventListener('click', () => reorderWithinDay(id, -1, columnDay));
+    card.querySelector('[data-action="down"]').addEventListener('click', () => reorderWithinDay(id, 1, columnDay));
+
+    card.querySelectorAll('[data-action="removeday"]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeDay(id, Number(btn.dataset.day));
+      });
+    });
+
+    const panel = card.querySelector('.daypick-panel');
+    if (openPanelId === id) panel.classList.add('open');
+    card.querySelector('[data-action="openpanel"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = !panel.classList.contains('open');
+      document.querySelectorAll('.daypick-panel.open').forEach(p => p.classList.remove('open'));
+      panel.classList.toggle('open', willOpen);
+      openPanelId = willOpen ? id : null;
+    });
+    panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const day = Number(cb.dataset.day);
+        if (day === 0){
+          if (cb.checked) setDays(id, []); else cb.checked = true; // unassigned is derived, not toggled off directly
+        } else if (cb.checked){
+          addDay(id, day);
+        } else {
+          removeDay(id, day);
+        }
+      });
     });
   });
-  document.querySelectorAll('.card [data-action="up"]').forEach(btn => {
-    btn.addEventListener('click', () => reorderWithinDay(btn.closest('.card').dataset.id, -1));
-  });
-  document.querySelectorAll('.card [data-action="down"]').forEach(btn => {
-    btn.addEventListener('click', () => reorderWithinDay(btn.closest('.card').dataset.id, 1));
-  });
+
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.daypick-panel.open').forEach(p => p.classList.remove('open'));
+    openPanelId = null;
+  }, { once:true });
 }
 
 /* ===================== DRAG & DROP ===================== */
@@ -602,7 +675,7 @@ function bindDragEvents(){
   document.querySelectorAll('.card').forEach(card => {
     card.addEventListener('dragstart', e => {
       card.classList.add('dragging');
-      e.dataTransfer.setData('text/plain', card.dataset.id);
+      e.dataTransfer.setData('text/plain', JSON.stringify({id: card.dataset.id, sourceDay: Number(card.dataset.sourceDay)}));
     });
     card.addEventListener('dragend', () => card.classList.remove('dragging'));
   });
@@ -615,35 +688,73 @@ function bindDragEvents(){
     zone.addEventListener('drop', e => {
       e.preventDefault();
       zone.closest('.column').classList.remove('dragover');
-      const id = e.dataTransfer.getData('text/plain');
-      const day = Number(zone.dataset.day);
-      moveCard(id, day);
+      let payload;
+      try{ payload = JSON.parse(e.dataTransfer.getData('text/plain')); }catch(err){ return; }
+      const targetDay = Number(zone.dataset.day);
+      moveCard(payload.id, payload.sourceDay, targetDay);
     });
   });
 }
 
 /* ===================== ACTIONS (optimistic + sync) ===================== */
-function moveCard(id, day){
-  const item = attractions.find(a => a.id === id);
-  if (!item) return;
-  item.day = day;
-  const siblings = attractions.filter(a => a.day === day && a.id !== id);
-  item.order = siblings.length ? Math.max(...siblings.map(s=>s.order)) + 1 : 0;
-  render();
-  apiPost({action:'updateDay', id, day, order: item.order});
+function syncDays(item){
+  apiCall('updateDays', {id:item.id, days:item.days.join(','), order:item.order});
 }
 
-function reorderWithinDay(id, dir){
+/** Drag-and-drop: moves a single occurrence from one day column to another
+ *  (dropping on "לא משויך" just removes it from the source day). */
+function moveCard(id, sourceDay, targetDay){
+  const item = attractions.find(a => a.id === id);
+  if (!item || sourceDay === targetDay) return;
+  let days = item.days.filter(d => d !== sourceDay);
+  if (targetDay !== 0 && !days.includes(targetDay)) days.push(targetDay);
+  item.days = days.sort((a,b)=>a-b);
+  const siblings = attractions.filter(a => a.id !== id && (targetDay===0 ? a.days.length===0 : a.days.includes(targetDay)));
+  item.order = siblings.length ? Math.max(...siblings.map(s=>s.order)) + 1 : 0;
+  render();
+  syncDays(item);
+}
+
+/** Checkbox popover: adds this attraction to an additional day, keeping existing days. */
+function addDay(id, day){
+  const item = attractions.find(a => a.id === id);
+  if (!item || item.days.includes(day)) return;
+  item.days = [...item.days, day].sort((a,b)=>a-b);
+  render();
+  syncDays(item);
+}
+
+/** Checkbox popover / badge ✕: removes this attraction from one specific day. */
+function removeDay(id, day){
   const item = attractions.find(a => a.id === id);
   if (!item) return;
-  const siblings = attractions.filter(a => a.day === item.day).sort((a,b)=>a.order-b.order);
+  item.days = item.days.filter(d => d !== day);
+  render();
+  syncDays(item);
+}
+
+/** Checkbox popover "לא משויך": clears all day assignments at once. */
+function setDays(id, days){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  item.days = days;
+  render();
+  syncDays(item);
+}
+
+function reorderWithinDay(id, dir, day){
+  const item = attractions.find(a => a.id === id);
+  if (!item) return;
+  const siblings = attractions
+    .filter(a => day===0 ? a.days.length===0 : a.days.includes(day))
+    .sort((a,b)=>a.order-b.order);
   const idx = siblings.findIndex(s => s.id === id);
   const swapIdx = idx + dir;
   if (swapIdx < 0 || swapIdx >= siblings.length) return;
   const other = siblings[swapIdx];
   const tmp = item.order; item.order = other.order; other.order = tmp;
   render();
-  apiPost({action:'reorder', items:[{id:item.id, day:item.day, order:item.order}, {id:other.id, day:other.day, order:other.order}]});
+  apiCall('reorder', {items: JSON.stringify([{id:item.id, day:item.days.join(','), order:item.order}, {id:other.id, day:other.days.join(','), order:other.order}])});
 }
 
 function toggleVisited(id){
@@ -651,7 +762,7 @@ function toggleVisited(id){
   if (!item) return;
   item.visited = !item.visited;
   render();
-  apiPost({action:'toggleVisited', id, visited:item.visited});
+  apiCall('toggleVisited', {id, visited:item.visited});
 }
 
 /* ===================== UTIL ===================== */
