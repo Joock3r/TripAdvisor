@@ -223,19 +223,6 @@
     border-radius:6px; padding:5px 8px; font-size:12px; cursor:pointer;
   }
   .mini:hover{background:var(--brass-soft);}
-  .day-badges{display:flex; gap:5px; flex-wrap:wrap; align-items:center;}
-  .day-badge{
-    display:inline-flex; align-items:center; gap:4px;
-    background:var(--route); color:#fff; border-radius:999px;
-    padding:3px 4px 3px 9px; font-size:11px; font-family:'Space Mono',monospace;
-  }
-  .day-badge.unassigned{background:var(--surface-2); color:var(--muted);}
-  .day-badge button{
-    background:rgba(255,255,255,0.25); border:none; color:inherit; border-radius:50%;
-    width:16px; height:16px; font-size:10px; cursor:pointer; line-height:1;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .day-badge.unassigned button{background:rgba(0,0,0,0.08);}
   .daypick-wrap{position:relative;}
   .daypick-panel{
     position:absolute; z-index:20; bottom:calc(100% + 6px); left:0;
@@ -595,15 +582,6 @@ function render(){
   bindDragEvents();
 }
 
-function dayBadgesHtml(a){
-  if (!a.days.length){
-    return `<span class="day-badge unassigned">לא משויך</span>`;
-  }
-  return a.days.map(d => `
-    <span class="day-badge">יום ${d}<button data-action="removeday" data-day="${d}" title="הסר מהיום הזה">✕</button></span>
-  `).join('');
-}
-
 function cardHtml(a, columnDay, maxDay){
   const emoji = CATEGORY_EMOJI[a.category] || '📌';
   const dayOptions = [];
@@ -618,7 +596,6 @@ function cardHtml(a, columnDay, maxDay){
         <button class="stamp-btn ${a.visited?'on':''}" data-action="toggle" title="סמן כביקרתי">✓</button>
       </div>
       ${a.desc ? `<p class="card-desc">${escapeHtml(a.desc)}</p>` : ''}
-      <div class="day-badges">${dayBadgesHtml(a)}</div>
       <div class="card-row" style="margin-top:8px;">
         <div class="card-controls">
           ${a.mapLink ? `<a class="mini" href="${escapeAttr(a.mapLink)}" target="_blank" rel="noopener">📍 מפה</a>` : ''}
@@ -646,13 +623,6 @@ function bindCardEvents(){
     card.querySelector('[data-action="up"]').addEventListener('click', () => reorderWithinDay(id, -1, columnDay));
     card.querySelector('[data-action="down"]').addEventListener('click', () => reorderWithinDay(id, 1, columnDay));
     card.querySelector('[data-action="delete"]').addEventListener('click', () => deleteAttraction(id));
-
-    card.querySelectorAll('[data-action="removeday"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        removeDay(id, Number(btn.dataset.day));
-      });
-    });
 
     const panel = card.querySelector('.daypick-panel');
     if (openPanelId === id) panel.classList.add('open');
